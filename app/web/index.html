@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CAS Vault</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f9fafb;
+      --card-bg: #ffffff;
+      --border: #e5e7eb;
+      --text: #111827;
+      --muted: #6b7280;
+    }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 2rem;
+    }
+    h1 {
+      margin-bottom: 1rem;
+      font-size: 1.75rem;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .card h2 {
+      margin-top: 0;
+      font-size: 1.25rem;
+      margin-bottom: 0.75rem;
+    }
+    form, .actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    input[type="text"], input[type="password"], input[type="file"] {
+      flex: 1;
+      padding: 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 0.95rem;
+    }
+    button {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    button:hover {
+      background: var(--primary-hover);
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    li {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.75rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    li code {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .file-info {
+      flex: 1;
+      margin-right: 0.5rem;
+    }
+    .file-actions button {
+      font-size: 0.8rem;
+      padding: 0.4rem 0.8rem;
+    }
+    
+    .badge {
+    background: #10b981; /* green */
+    color: #fff;
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+    }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>CAS Vault</h1>
+
+    <div class="card">
+      <h2>Login</h2>
+      <form id="login">
+        <input name="username" type="text" placeholder="Username" value="demo" />
+        <input name="password" type="password" placeholder="Password" value="demo123!" />
+        <button>Sign In</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Upload File</h2>
+      <form id="upload">
+        <input type="file" name="file" />
+        <button>Upload</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Your Files</h2>
+      <div class="actions">
+        <button id="refresh">Refresh</button>
+      </div>
+      <ul id="files"></ul>
+    </div>
+  </div>
+
+  <script>
+    let token = "";
+    const filesUl = document.getElementById('files');
+
+    document.getElementById('login').onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const res = await fetch('/auth/token', {
+        method: 'POST',
+        body: new URLSearchParams(fd),
+      });
+      if (!res.ok) {
+        alert('Login failed');
+        return;
+      }
+      const data = await res.json();
+      token = data.access_token;
+      alert('Logged in');
+      await listFiles();
+    };
+
+    document.getElementById('upload').onsubmit = async (e) => {
+      e.preventDefault();
+      if (!token) { alert('Login first'); return; }
+
+      const fileInput = e.target.querySelector('input[type="file"]');
+      if (!fileInput.files || fileInput.files.length === 0) {
+        alert('Please select a file to upload.');
+        return;
+      }
+
+      const fd = new FormData(e.target);
+      const res = await fetch('/files', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token },
+        body: fd,
+      });
+      const json = await res.json();
+      alert(`Uploaded: hash=${json.hash}, size=${json.size_bytes}, deduped=${json.deduped}`);
+      await listFiles();
+    };
+
+    document.getElementById('refresh').onclick = async () => {
+      await listFiles();
+    };
+
+    async function listFiles() {
+      if (!token) { filesUl.innerHTML = '<li>Login first</li>'; return; }
+      const res = await fetch('/files', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!res.ok) {
+        filesUl.innerHTML = '<li>Could not load files</li>';
+        return;
+      }
+      const items = await res.json();
+      filesUl.innerHTML = '';
+      items.forEach(it => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+        <div class="file-info">
+            <strong>${it.name}</strong><br>
+            <code>#${it.id}</code> | ${it.size_bytes} bytes | ${it.hash}
+            ${it.deduped ? '<span class="badge">Deduped</span>' : ''}
+        </div>
+        <div class="file-actions">
+            <button data-id="${it.id}">Download</button>
+        </div>
+        `;
+        const btn = li.querySelector('button');
+        btn.onclick = () => downloadFile(it.id, it.name);
+        filesUl.appendChild(li);
+      });
+    }
+
+    async function downloadFile(id, name) {
+      const res = await fetch(`/files/${id}/download`, {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!res.ok) { alert('Download failed'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name || 'download';
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>
